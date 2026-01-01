@@ -3,6 +3,43 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 
+# ============================================================
+# Optional gmpy2 acceleration layer (safe fallback on Windows)
+# ============================================================
+
+try:
+    import gmpy2
+    _HAS_GMPY2 = True
+    print("[INFO] gmpy2 detected → using accelerated big integer arithmetic.")
+except Exception:
+    gmpy2 = None
+    _HAS_GMPY2 = False
+    print("[INFO] gmpy2 not available → falling back to Python built-in integers.")
+
+
+def powmod(base: int, exp: int, mod: int) -> int:
+    """
+    Modular exponentiation with optional gmpy2 acceleration.
+    Fallback: Python built-in pow(base, exp, mod)
+    """
+    if _HAS_GMPY2:
+        return int(gmpy2.powmod(gmpy2.mpz(base), gmpy2.mpz(exp), gmpy2.mpz(mod)))
+    return pow(base, exp, mod)
+
+
+def modinv(a: int, m: int) -> int:
+    """
+    Modular inverse with optional gmpy2 acceleration.
+    Fallback: Python built-in pow(a, -1, m)
+    """
+    if _HAS_GMPY2:
+        inv = gmpy2.invert(gmpy2.mpz(a), gmpy2.mpz(m))
+        if inv == 0:
+            raise ValueError("Inverse does not exist")
+        return int(inv)
+    return pow(a, -1, m)
+
+
 # -----------------------------
 # Pretty-print helpers
 # -----------------------------
