@@ -46,7 +46,7 @@ verify H(m || v) == e
 ```
 👉 需要 多次模指數運算
 
-### B. ElGamal Hybrid Encryption
+B. ElGamal Hybrid Encryption
 ```
 c1 = g^k
 shared = yB^k
