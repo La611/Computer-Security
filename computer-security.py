@@ -3,9 +3,7 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 
-# ============================================================
-# Optional gmpy2 acceleration layer (safe fallback on Windows)
-# ============================================================
+# gmpy2
 
 try:
     import gmpy2
@@ -17,21 +15,16 @@ except Exception:
     print("[INFO] gmpy2 not available → falling back to Python built-in integers.")
 
 
-def powmod(base: int, exp: int, mod: int) -> int:
-    """
-    Modular exponentiation with optional gmpy2 acceleration.
-    Fallback: Python built-in pow(base, exp, mod)
-    """
+
+# 基礎運算
+
+def powmod(base: int, exp: int, mod: int) -> int:    # Modular exponentiation
     if _HAS_GMPY2:
         return int(gmpy2.powmod(gmpy2.mpz(base), gmpy2.mpz(exp), gmpy2.mpz(mod)))
     return pow(base, exp, mod)
 
 
-def modinv(a: int, m: int) -> int:
-    """
-    Modular inverse with optional gmpy2 acceleration.
-    Fallback: Python built-in pow(a, -1, m)
-    """
+def modinv(a: int, m: int) -> int:   # Modular invers
     if _HAS_GMPY2:
         inv = gmpy2.invert(gmpy2.mpz(a), gmpy2.mpz(m))
         if inv == 0:
@@ -40,10 +33,7 @@ def modinv(a: int, m: int) -> int:
     return pow(a, -1, m)
 
 
-# -----------------------------
-# Pretty-print helpers
-# -----------------------------
-
+# 輸出格式
 
 def hr(title: str = ""):
     line = "=" * 70
@@ -63,11 +53,6 @@ def fmt_bytes(b: bytes, maxlen: int = 80) -> str:
         hx = hx[:maxlen] + "..."
     return f"len={len(b)} bytes, hex={hx}"
 
-# -----------------------------
-# Utilities
-# -----------------------------
-
-
 def int_to_bytes(x: int) -> bytes:
     if x == 0:
         return b"\x00"
@@ -78,9 +63,9 @@ def bytes_to_int(b: bytes) -> int:
     return int.from_bytes(b, "big")
 
 
-def modinv(a: int, m: int) -> int:
-    return pow(a, -1, m)
 
+# 簽密的金鑰彙整 & 分離
+# DH's K(512 b) -> k(64 b) -> k1, k2
 
 def kdf_split(k_int: int, k1_len=32, k2_len=32) -> tuple[bytes, bytes]:
     kb = int_to_bytes(k_int)
@@ -90,6 +75,8 @@ def kdf_split(k_int: int, k1_len=32, k2_len=32) -> tuple[bytes, bytes]:
     return k1, k2
 
 
+# hash  (get r)
+
 def KH(k2: bytes, m: bytes, out_bits: int | None, q: int) -> int:
     mac = hmac.new(k2, m, hashlib.sha256).digest()
     r_int = bytes_to_int(mac)
@@ -97,10 +84,9 @@ def KH(k2: bytes, m: bytes, out_bits: int | None, q: int) -> int:
         r_int = r_int >> max(0, (len(mac) * 8 - out_bits))
     return r_int % q
 
-# -----------------------------
-# Symmetric encryption (AES-GCM preferred)
-# -----------------------------
 
+
+# 對稱式加密
 
 def aesgcm_encrypt(key: bytes, plaintext: bytes, verbose: bool = False) -> bytes:
     try:
@@ -136,6 +122,8 @@ def aesgcm_decrypt(key: bytes, ciphertext: bytes, verbose: bool = False) -> byte
         print("[AES] nonce:", fmt_bytes(nonce))
         print("[AES] ct+tag:", fmt_bytes(ct))
     return AESGCM(key).decrypt(nonce, ct, associated_data=None)
+
+
 
 
 def xor_stream_encrypt(key: bytes, plaintext: bytes) -> bytes:
