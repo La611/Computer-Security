@@ -1,27 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-Demo: Compare Traditional "Schnorr Signature then ElGamal Hybrid Encryption"
-      vs. Zheng-style Signcryption (SCS1-like), and COUNT modular exponentiations.
-
-Key fix included:
-- DO NOT hard-code 32 bytes for signature integers.
-- Encode Schnorr (e, s) using fixed length derived from q (Lq = ceil(bitlen(q)/8)),
-  preventing OverflowError when q > 2^256.
-
-Notes:
-- This is a DEMO to highlight computational structure (powmod counts).
-- The symmetric encryption here is a simple XOR stream derived from SHA-256 (NOT production).
-- Group generation is demo-only (search for safe-prime-ish p=2q+1).
-"""
-
 import hashlib
 import secrets
 import time
 from dataclasses import dataclass
 
-# ---------------------------
-# Optional acceleration: gmpy2
-# ---------------------------
+
 USE_GMPY2 = False
 try:
     import gmpy2  # type: ignore
@@ -30,9 +12,6 @@ except Exception:
     USE_GMPY2 = False
 
 
-# ---------------------------
-# Instrumentation: count heavy ops
-# ---------------------------
 class Counter:
     def __init__(self):
         self.powmods = 0
@@ -43,16 +22,14 @@ CTR = Counter()
 
 
 def powmod(a: int, e: int, m: int) -> int:
-    """Counted modular exponentiation."""
-    CTR.powmods += 1
+    CTR.powmods += 1                         # Counted modular exponentiation
     if USE_GMPY2:
         return int(gmpy2.powmod(a, e, m))
     return pow(a, e, m)
 
 
 def invmod(a: int, m: int) -> int:
-    """Counted modular inverse."""
-    CTR.invs += 1
+    CTR.invs += 1                    # Counted modular inverse
     if USE_GMPY2:
         inv = gmpy2.invert(a, m)
         if inv == 0:
@@ -61,16 +38,11 @@ def invmod(a: int, m: int) -> int:
     return pow(a, -1, m)
 
 
-# ---------------------------
-# Integer/bytes helpers (FIX for OverflowError)
-# ---------------------------
 def int_len_bytes(n: int) -> int:
-    """Minimal bytes to represent values modulo n."""
     return (n.bit_length() + 7) // 8
 
 
 def int_to_fixed_bytes(x: int, n: int) -> bytes:
-    """Encode x using fixed length determined by modulus n."""
     L = int_len_bytes(n)
     return int(x).to_bytes(L, "big")
 
@@ -79,9 +51,7 @@ def fixed_bytes_to_int(b: bytes) -> int:
     return int.from_bytes(b, "big")
 
 
-# ---------------------------
-# Simple hash/KDF and XOR stream cipher (demo-only)
-# ---------------------------
+# hash/KDF and XOR stream cipher  (simple for demo)
 def H_bytes(*parts: bytes, out_len=32) -> bytes:
     h = hashlib.sha256()
     for p in parts:
@@ -111,9 +81,7 @@ def xor_stream_decrypt(key: bytes, c: bytes) -> bytes:
     return xor_stream_encrypt(key, c)
 
 
-# ---------------------------
 # Group parameters + demo safe-prime-ish generation
-# ---------------------------
 @dataclass
 class Group:
     p: int
@@ -121,6 +89,7 @@ class Group:
     g: int
 
 
+# 質數檢測 for 離散對數群
 def is_probable_prime(n: int, k: int = 16) -> bool:
     if n < 2:
         return False
@@ -152,11 +121,8 @@ def is_probable_prime(n: int, k: int = 16) -> bool:
     return True
 
 
+# 回傳 p, q, g
 def make_demo_group(bits=512) -> Group:
-    """
-    Demo-only group: search for primes q and p=2q+1.
-    Keep bits small for speed. Increase bits for more realistic timing (slower).
-    """
     if bits < 256:
         raise ValueError("Use >=256 bits for a meaningful demo.")
     while True:
@@ -168,9 +134,8 @@ def make_demo_group(bits=512) -> Group:
             return Group(p=p, q=q, g=2)
 
 
-# ---------------------------
+
 # Key generation
-# ---------------------------
 @dataclass
 class KeyPair:
     x: int  # secret
@@ -183,9 +148,8 @@ def keygen(G: Group) -> KeyPair:
     return KeyPair(x=x, y=y)
 
 
-# ---------------------------
+
 # Schnorr signature (DLP-based, subgroup order q)
-# ---------------------------
 def schnorr_sign(G: Group, sk: int, msg: bytes) -> tuple[int, int]:
     k = secrets.randbelow(G.q - 1) + 1
     r = powmod(G.g, k, G.p)  # commitment
@@ -197,8 +161,6 @@ def schnorr_sign(G: Group, sk: int, msg: bytes) -> tuple[int, int]:
 
 def schnorr_verify(G: Group, pk: int, msg: bytes, sig: tuple[int, int]) -> bool:
     e, s = sig
-    # v = g^s * y^{-e} mod p
-    # In subgroup of order q, y^{-e} == y^{q-e} (mod p)
     y_inv_e = powmod(pk, (G.q - e) % G.q, G.p)
     v = (powmod(G.g, s, G.p) * y_inv_e) % G.p
     v_bytes = v.to_bytes(int_len_bytes(G.p), "big")
@@ -206,9 +168,8 @@ def schnorr_verify(G: Group, pk: int, msg: bytes, sig: tuple[int, int]) -> bool:
     return e2 == e
 
 
-# ---------------------------
-# ElGamal hybrid encryption (demo KDF+XOR)
-# ---------------------------
+
+# ElGamal hybrid encryption
 def elgamal_encrypt(G: Group, pkB: int, plaintext: bytes) -> tuple[int, bytes]:
     k = secrets.randbelow(G.q - 1) + 1
     c1 = powmod(G.g, k, G.p)
@@ -225,17 +186,13 @@ def elgamal_decrypt(G: Group, skB: int, ct: tuple[int, bytes]) -> bytes:
     return xor_stream_decrypt(key, c2)
 
 
-# ---------------------------
+
 # Traditional: Sign-then-Encrypt (Schnorr + ElGamal)
-# FIX: encode signature using Lq derived from q (no 32-byte hardcode)
-# ---------------------------
 def sign_then_encrypt(G: Group, skA: int, pkB: int, msg: bytes) -> tuple[int, bytes]:
     e, s = schnorr_sign(G, skA, msg)
     Lq = int_len_bytes(G.q)
 
-    # Demo payload format: msg || e || s
-    # Note: '||' split can be ambiguous if msg contains '||' — acceptable for demo.
-    payload = msg + b"||" + e.to_bytes(Lq, "big") + s.to_bytes(Lq, "big")
+    payload = msg + b"||" + e.to_bytes(Lq, "big") + s.to_bytes(Lq, "big")   # Demo payload format: msg || e || s
     return elgamal_encrypt(G, pkB, payload)
 
 
@@ -254,9 +211,8 @@ def decrypt_then_verify(G: Group, pkA: int, skB: int, ct: tuple[int, bytes]) -> 
         return b"", False
 
 
-# ---------------------------
-# Signcryption (SCS1-like) per Zheng-style construction (demo adaptation)
-# ---------------------------
+
+# Signcryption (SCS1-like) 
 def signcrypt_scs1(G: Group, skA: int, pkA: int, pkB: int, msg: bytes) -> tuple[bytes, int, int]:
     # 1) choose x, compute shared k = yb^x mod p
     x = secrets.randbelow(G.q - 1) + 1
@@ -283,7 +239,6 @@ def signcrypt_scs1(G: Group, skA: int, pkA: int, pkB: int, msg: bytes) -> tuple[
 def unsigncrypt_scs1(G: Group, pkA: int, skB: int, ct: tuple[bytes, int, int]) -> tuple[bytes, bool]:
     c, r, s = ct
 
-    # Recover k = (ya * g^r)^(s*xb) mod p  (demo adaptation of recovery form)
     base = (pkA * powmod(G.g, r, G.p)) % G.p
     exp = (s * skB) % G.q
     k = powmod(base, exp, G.p)
@@ -297,9 +252,7 @@ def unsigncrypt_scs1(G: Group, pkA: int, skB: int, ct: tuple[bytes, int, int]) -
     return msg, (r2 == r)
 
 
-# ---------------------------
-# Benchmark / demonstration
-# ---------------------------
+#  demonstration
 def run_once(G: Group, msg: bytes):
     alice = keygen(G)
     bob = keygen(G)
@@ -337,7 +290,6 @@ def run_once(G: Group, msg: bytes):
 
 
 if __name__ == "__main__":
-    # Start small for quick validation, then increase (e.g., 1024/2048) for more realistic timing.
     G = make_demo_group(bits=512)
     msg = b"Hello, signcryption demo!"
     run_once(G, msg)
