@@ -95,7 +95,7 @@ def aesgcm_encrypt(key: bytes, plaintext: bytes, verbose: bool = False) -> bytes
             print("[AES] 使用 AES-GCM")
     except ImportError:
         if verbose:
-            print("[AES] cryptography 未安裝，改用 XOR demo fallback（不安全）")
+            print("[AES] cryptography 未安裝，改用 XOR demo fallback")
         return xor_stream_encrypt(key, plaintext)
 
     nonce = os.urandom(12)
@@ -114,7 +114,7 @@ def aesgcm_decrypt(key: bytes, ciphertext: bytes, verbose: bool = False) -> byte
             print("[AES] 使用 AES-GCM")
     except ImportError:
         if verbose:
-            print("[AES] cryptography 未安裝，改用 XOR demo fallback（不安全）")
+            print("[AES] cryptography 未安裝，改用 XOR demo fallback")
         return xor_stream_decrypt(key, ciphertext)
 
     nonce, ct = ciphertext[:12], ciphertext[12:]
@@ -124,7 +124,7 @@ def aesgcm_decrypt(key: bytes, ciphertext: bytes, verbose: bool = False) -> byte
     return AESGCM(key).decrypt(nonce, ct, associated_data=None)
 
 
-
+# 未裝 cryptography 的對稱式加解密
 
 def xor_stream_encrypt(key: bytes, plaintext: bytes) -> bytes:
     out = bytearray()
@@ -143,10 +143,9 @@ def xor_stream_encrypt(key: bytes, plaintext: bytes) -> bytes:
 def xor_stream_decrypt(key: bytes, ciphertext: bytes) -> bytes:
     return xor_stream_encrypt(key, ciphertext)
 
-# -----------------------------
-# Parameters & Keys
-# -----------------------------
 
+
+# 公開參數
 
 @dataclass
 class GroupParams:
@@ -154,6 +153,7 @@ class GroupParams:
     q: int
     g: int
 
+# 鑰匙
 
 @dataclass
 class KeyPair:
@@ -166,10 +166,10 @@ def keygen(params: GroupParams) -> KeyPair:
     y = pow(params.g, x, params.p)
     return KeyPair(x=x, y=y)
 
-# -----------------------------
-# Verbose Signcryption / Unsigncryption
-# -----------------------------
 
+
+# SCS 1
+# 簽 + 加密
 
 def signcrypt_SCS1_verbose(params: GroupParams, alice: KeyPair, bob_pub: int, m: bytes,
                            r_bits: int | None = None) -> tuple[bytes, int, int]:
@@ -202,6 +202,7 @@ def signcrypt_SCS1_verbose(params: GroupParams, alice: KeyPair, bob_pub: int, m:
     print("[Output] (c, r, s) 完成")
     return c, r, s
 
+# 解密 + 驗
 
 def unsigncrypt_SCS1_verbose(params: GroupParams, alice_pub: int, bob: KeyPair,
                              c: bytes, r: int, s: int,
@@ -239,6 +240,8 @@ def unsigncrypt_SCS1_verbose(params: GroupParams, alice_pub: int, bob: KeyPair,
     print("[8] 驗證成功：r_check == r")
     return m
 
+
+# SCS 2
 
 def signcrypt_SCS2_verbose(params: GroupParams, alice: KeyPair, bob_pub: int, m: bytes,
                            r_bits: int | None = None) -> tuple[bytes, int, int]:
@@ -308,9 +311,6 @@ def unsigncrypt_SCS2_verbose(params: GroupParams, alice_pub: int, bob: KeyPair,
     print("[8] 驗證成功：r_check == r")
     return m
 
-# -----------------------------
-# Toy params (demo only)
-# -----------------------------
 
 
 def find_toy_params() -> GroupParams:
@@ -322,9 +322,6 @@ def find_toy_params() -> GroupParams:
             return GroupParams(p=p, q=q, g=g)
     raise RuntimeError("Failed to find toy params.")
 
-# -----------------------------
-# Demo runner (prints everything)
-# -----------------------------
 
 
 def demo(verbose_bits: int | None = 80):
