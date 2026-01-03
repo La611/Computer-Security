@@ -3,9 +3,7 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 
-# ============================================================
-# Optional gmpy2 acceleration layer (safe fallback on Windows)
-# ============================================================
+# gmpy2
 
 try:
     import gmpy2
@@ -17,21 +15,16 @@ except Exception:
     print("[INFO] gmpy2 not available → falling back to Python built-in integers.")
 
 
-def powmod(base: int, exp: int, mod: int) -> int:
-    """
-    Modular exponentiation with optional gmpy2 acceleration.
-    Fallback: Python built-in pow(base, exp, mod)
-    """
+
+# 基礎運算
+
+def powmod(base: int, exp: int, mod: int) -> int:    # Modular exponentiation
     if _HAS_GMPY2:
         return int(gmpy2.powmod(gmpy2.mpz(base), gmpy2.mpz(exp), gmpy2.mpz(mod)))
     return pow(base, exp, mod)
 
 
-def modinv(a: int, m: int) -> int:
-    """
-    Modular inverse with optional gmpy2 acceleration.
-    Fallback: Python built-in pow(a, -1, m)
-    """
+def modinv(a: int, m: int) -> int:   # Modular invers
     if _HAS_GMPY2:
         inv = gmpy2.invert(gmpy2.mpz(a), gmpy2.mpz(m))
         if inv == 0:
@@ -40,10 +33,7 @@ def modinv(a: int, m: int) -> int:
     return pow(a, -1, m)
 
 
-# -----------------------------
-# Pretty-print helpers
-# -----------------------------
-
+# 輸出格式
 
 def hr(title: str = ""):
     line = "=" * 70
@@ -63,11 +53,6 @@ def fmt_bytes(b: bytes, maxlen: int = 80) -> str:
         hx = hx[:maxlen] + "..."
     return f"len={len(b)} bytes, hex={hx}"
 
-# -----------------------------
-# Utilities
-# -----------------------------
-
-
 def int_to_bytes(x: int) -> bytes:
     if x == 0:
         return b"\x00"
@@ -78,9 +63,9 @@ def bytes_to_int(b: bytes) -> int:
     return int.from_bytes(b, "big")
 
 
-def modinv(a: int, m: int) -> int:
-    return pow(a, -1, m)
 
+# 簽密的金鑰彙整 & 分離
+# DH's K(512 b) -> k(64 b) -> k1, k2
 
 def kdf_split(k_int: int, k1_len=32, k2_len=32) -> tuple[bytes, bytes]:
     kb = int_to_bytes(k_int)
@@ -90,6 +75,8 @@ def kdf_split(k_int: int, k1_len=32, k2_len=32) -> tuple[bytes, bytes]:
     return k1, k2
 
 
+# hash  (get r)
+
 def KH(k2: bytes, m: bytes, out_bits: int | None, q: int) -> int:
     mac = hmac.new(k2, m, hashlib.sha256).digest()
     r_int = bytes_to_int(mac)
@@ -97,10 +84,9 @@ def KH(k2: bytes, m: bytes, out_bits: int | None, q: int) -> int:
         r_int = r_int >> max(0, (len(mac) * 8 - out_bits))
     return r_int % q
 
-# -----------------------------
-# Symmetric encryption (AES-GCM preferred)
-# -----------------------------
 
+
+# 對稱式加密
 
 def aesgcm_encrypt(key: bytes, plaintext: bytes, verbose: bool = False) -> bytes:
     try:
@@ -109,7 +95,7 @@ def aesgcm_encrypt(key: bytes, plaintext: bytes, verbose: bool = False) -> bytes
             print("[AES] 使用 AES-GCM")
     except ImportError:
         if verbose:
-            print("[AES] cryptography 未安裝，改用 XOR demo fallback（不安全）")
+            print("[AES] cryptography 未安裝，改用 XOR demo fallback")
         return xor_stream_encrypt(key, plaintext)
 
     nonce = os.urandom(12)
@@ -128,7 +114,7 @@ def aesgcm_decrypt(key: bytes, ciphertext: bytes, verbose: bool = False) -> byte
             print("[AES] 使用 AES-GCM")
     except ImportError:
         if verbose:
-            print("[AES] cryptography 未安裝，改用 XOR demo fallback（不安全）")
+            print("[AES] cryptography 未安裝，改用 XOR demo fallback")
         return xor_stream_decrypt(key, ciphertext)
 
     nonce, ct = ciphertext[:12], ciphertext[12:]
@@ -137,6 +123,8 @@ def aesgcm_decrypt(key: bytes, ciphertext: bytes, verbose: bool = False) -> byte
         print("[AES] ct+tag:", fmt_bytes(ct))
     return AESGCM(key).decrypt(nonce, ct, associated_data=None)
 
+
+# 未裝 cryptography 的對稱式加解密
 
 def xor_stream_encrypt(key: bytes, plaintext: bytes) -> bytes:
     out = bytearray()
@@ -155,10 +143,9 @@ def xor_stream_encrypt(key: bytes, plaintext: bytes) -> bytes:
 def xor_stream_decrypt(key: bytes, ciphertext: bytes) -> bytes:
     return xor_stream_encrypt(key, ciphertext)
 
-# -----------------------------
-# Parameters & Keys
-# -----------------------------
 
+
+# 公開參數
 
 @dataclass
 class GroupParams:
@@ -166,6 +153,7 @@ class GroupParams:
     q: int
     g: int
 
+# 鑰匙
 
 @dataclass
 class KeyPair:
@@ -178,10 +166,10 @@ def keygen(params: GroupParams) -> KeyPair:
     y = pow(params.g, x, params.p)
     return KeyPair(x=x, y=y)
 
-# -----------------------------
-# Verbose Signcryption / Unsigncryption
-# -----------------------------
 
+
+# SCS 1
+# 簽 + 加密
 
 def signcrypt_SCS1_verbose(params: GroupParams, alice: KeyPair, bob_pub: int, m: bytes,
                            r_bits: int | None = None) -> tuple[bytes, int, int]:
@@ -214,6 +202,7 @@ def signcrypt_SCS1_verbose(params: GroupParams, alice: KeyPair, bob_pub: int, m:
     print("[Output] (c, r, s) 完成")
     return c, r, s
 
+# 解密 + 驗
 
 def unsigncrypt_SCS1_verbose(params: GroupParams, alice_pub: int, bob: KeyPair,
                              c: bytes, r: int, s: int,
@@ -251,6 +240,8 @@ def unsigncrypt_SCS1_verbose(params: GroupParams, alice_pub: int, bob: KeyPair,
     print("[8] 驗證成功：r_check == r")
     return m
 
+
+# SCS 2
 
 def signcrypt_SCS2_verbose(params: GroupParams, alice: KeyPair, bob_pub: int, m: bytes,
                            r_bits: int | None = None) -> tuple[bytes, int, int]:
@@ -320,9 +311,6 @@ def unsigncrypt_SCS2_verbose(params: GroupParams, alice_pub: int, bob: KeyPair,
     print("[8] 驗證成功：r_check == r")
     return m
 
-# -----------------------------
-# Toy params (demo only)
-# -----------------------------
 
 
 def find_toy_params() -> GroupParams:
@@ -334,9 +322,6 @@ def find_toy_params() -> GroupParams:
             return GroupParams(p=p, q=q, g=g)
     raise RuntimeError("Failed to find toy params.")
 
-# -----------------------------
-# Demo runner (prints everything)
-# -----------------------------
 
 
 def demo(verbose_bits: int | None = 80):
